@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tracker Ore Lavoro</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 1rem;
+      max-width: 700px;
+      margin: auto;
+    }
+    input, button, select {
+      padding: 0.5rem;
+      margin: 0.25rem 0;
+      width: 100%;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      text-align: center;
+    }
+    th, td {
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+    }
+    .summary {
+      margin-top: 2rem;
+      background: #f9f9f9;
+      padding: 1rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    #exportBtn {
+      background: #007bff;
+      color: white;
+      margin-top: 1rem;
+    }
+    .action-btn {
+      padding: 0.25rem 0.5rem;
+      margin: 0 2px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .edit-btn {
+      background-color: #ffc107;
+      border: none;
+    }
+    .delete-btn {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+    }
+    .month-header {
+      background-color: #e0e0e0;
+      font-weight: bold;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Registro Ore Lavoro</h1>
+  <div>
+    <label>Data</label>
+    <input type="date" id="workDate">
+    <label>Ora Inizio</label>
+    <input type="time" id="startTime">
+    <label>Ora Fine</label>
+    <input type="time" id="endTime">
+    <label>Ore Totali</label>
+    <input type="text" id="autoHours" readonly>
+    <button onclick="addWorkEntry()">Aggiungi Giornata</button>
+
+    <label>Anno</label>
+    <input type="number" id="selectedYear" min="2000" max="2100">
+    <label>Mese</label>
+    <select id="selectedMonth">
+      <option value="1">Gennaio</option>
+      <option value="2">Febbraio</option>
+      <option value="3">Marzo</option>
+      <option value="4">Aprile</option>
+      <option value="5">Maggio</option>
+      <option value="6">Giugno</option>
+      <option value="7">Luglio</option>
+      <option value="8">Agosto</option>
+      <option value="9">Settembre</option>
+      <option value="10">Ottobre</option>
+      <option value="11">Novembre</option>
+      <option value="12">Dicembre</option>
+    </select>
+    <button id="exportBtn" onclick="exportToPDF()">Esporta PDF</button>
+  </div>
+
+  <table id="entriesTable">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Inizio</th>
+        <th>Fine</th>
+        <th>Ore</th>
+        <th>Azioni</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="summary">
+    <p>Ore oggi: <span id="todayHours">0</span></p>
+    <p>Ore settimana: <span id="weekHours">0</span></p>
+    <p>Ore mese: <span id="monthHours">0</span></p>
+  </div>
+
+  <script>
+    let entries = JSON.parse(localStorage.getItem('workEntries') || '[]');
+
+    function parseTime(t) {
+      const [h, m] = t.split(":").map(Number);
+      return h + m / 60;
+    }
+
+    function calculateWorkedHours(start, end) {
+      const startH = parseTime(start);
+      const endH = parseTime(end);
+      return (endH >= startH) ? (endH - startH) : (24 - startH + endH);
+    }
+
+    function getDayKey(date) {
+      return date.toISOString().split("T")[0];
+    }
+
+    function getWeekKey(date) {
+      const first = new Date(date);
+      first.setDate(date.getDate() - date.getDay());
+      return getDayKey(first);
+    }
+
+    function getMonthKey(date) {
+      return date.getFullYear() + "-" + (date.getMonth() + 1);
+    }
+
+    function updateAutoHours() {
+      const start = document.getElementById('startTime').value;
+      const end = document.getElementById('endTime').value;
+      if (start && end) {
+        const h = calculateWorkedHours(start, end);
+        document.getElementById('autoHours').value = h.toFixed(2);
+      } else {
+        document.getElementById('autoHours').value = '';
+      }
+    }
+
+    document.getElementById('startTime').addEventListener('input', updateAutoHours);
+    document.getElementById('endTime').addEventListener('input', updateAutoHours);
+
+    function addWorkEntry() {
+      const date = new Date(document.getElementById('workDate').value);
+      const start = document.getElementById('startTime').value;
+      const end = document.getElementById('endTime').value;
+
+      if (!date || !start || !end) return alert("Inserisci tutti i dati");
+
+      const worked = calculateWorkedHours(start, end);
+
+      const entry = {
+        date: getDayKey(date),
+        start,
+        end,
+        hours: +worked.toFixed(2)
+      };
+
+      entries.push(entry);
+      localStorage.setItem('workEntries', JSON.stringify(entries));
+
+      renderTable();
+      renderSummary();
+    }
+
+    function deleteEntry(index) {
+      if (!confirm("Sicuro di eliminare questa voce?")) return;
+      entries.splice(index, 1);
+      localStorage.setItem('workEntries', JSON.stringify(entries));
+      renderTable();
+      renderSummary();
+    }
+
+    function editEntry(index) {
+      const entry = entries[index];
+      document.getElementById('workDate').value = entry.date;
+      document.getElementById('startTime').value = entry.start;
+      document.getElementById('endTime').value = entry.end;
+      updateAutoHours();
+      entries.splice(index, 1);
+      localStorage.setItem('workEntries', JSON.stringify(entries));
+      renderTable();
+      renderSummary();
+    }
+
+    function renderTable() {
+      const tbody = document.querySelector("#entriesTable tbody");
+      tbody.innerHTML = "";
+
+      const sorted = [...entries].sort((a, b) => new Date(a.date) - new Date(b.date));
+      let currentMonth = "";
+
+      sorted.forEach((e, i) => {
+        const d = new Date(e.date);
+        const label = `${d.getFullYear()} - ${d.toLocaleString('it-IT', { month: 'long' })}`;
+
+        if (label !== currentMonth) {
+          currentMonth = label;
+          const separator = document.createElement("tr");
+          const cell = document.createElement("td");
+          cell.textContent = currentMonth.toUpperCase();
+          cell.colSpan = 5;
+          cell.className = "month-header";
+          separator.appendChild(cell);
+          tbody.appendChild(separator);
+        }
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${e.date}</td>
+          <td>${e.start}</td>
+          <td>${e.end}</td>
+          <td>${e.hours}</td>
+          <td>
+            <button class="action-btn edit-btn" onclick="editEntry(${entries.indexOf(e)})">Modifica</button>
+            <button class="action-btn delete-btn" onclick="deleteEntry(${entries.indexOf(e)})">Elimina</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function renderSummary() {
+      const today = getDayKey(new Date());
+      const week = getWeekKey(new Date());
+      const month = getMonthKey(new Date());
+
+      let sumToday = 0, sumWeek = 0, sumMonth = 0;
+
+      entries.forEach(e => {
+        const d = new Date(e.date);
+        if (getDayKey(d) === today) sumToday += e.hours;
+        if (getWeekKey(d) === week) sumWeek += e.hours;
+        if (getMonthKey(d) === month) sumMonth += e.hours;
+      });
+
+      document.getElementById('todayHours').textContent = sumToday.toFixed(2);
+      document.getElementById('weekHours').textContent = sumWeek.toFixed(2);
+      document.getElementById('monthHours').textContent = sumMonth.toFixed(2);
+    }
+
+    function exportToPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const year = parseInt(document.getElementById('selectedYear').value);
+      const month = parseInt(document.getElementById('selectedMonth').value);
+      const monthKey = year + '-' + month;
+
+      let y = 10;
+      let total = 0;
+
+      doc.setFontSize(14);
+      doc.text(`Report Ore - ${monthKey}`, 10, y);
+      y += 10;
+
+      doc.setFontSize(10);
+      doc.text("Data", 10, y);
+      doc.text("Inizio", 50, y);
+      doc.text("Fine", 90, y);
+      doc.text("Ore", 130, y);
+      y += 6;
+
+      entries.filter(e => getMonthKey(new Date(e.date)) === monthKey)
+        .forEach(e => {
+          doc.text(e.date, 10, y);
+          doc.text(e.start, 50, y);
+          doc.text(e.end, 90, y);
+          doc.text(e.hours.toString(), 130, y);
+          total += e.hours;
+          y += 6;
+        });
+
+      y += 4;
+      doc.setFontSize(12);
+      doc.text("Ore Totali:", 90, y);
+      doc.text(total.toFixed(2), 130, y);
+
+      doc.save(`ore_lavoro_${monthKey}.pdf`);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const now = new Date();
+      document.getElementById('selectedYear').value = now.getFullYear();
+      document.getElementById('selectedMonth').value = now.getMonth() + 1;
+      renderTable();
+      renderSummary();
+    });
+  </script>
+</body>
+</html>
